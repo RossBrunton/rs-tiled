@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, Error, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use xml::attribute::OwnedAttribute;
 use xml::reader::XmlEvent;
@@ -390,7 +390,7 @@ impl Tileset {
         let mut properties = HashMap::new();
         parse_tag!(parser, "tileset", {
             "image" => |attrs| {
-                images.push(Image::new(parser, attrs)?);
+                images.push(Image::new(parser, attrs, map_path)?);
                 Ok(())
             },
             "properties" => |_| {
@@ -438,10 +438,10 @@ impl Tileset {
                 tileset_path
             ))
         })?;
-        Tileset::new_external(file, first_gid, map_path)
+        Tileset::new_external(file, first_gid, Some(&tileset_path))
     }
 
-    fn new_external<R: Read>(file: R, first_gid: u32, map_path: Option<&Path>) -> Result<Tileset, TiledError> {
+    fn new_external<R: Read>(file: R, first_gid: u32, tileset_path: Option<&Path>) -> Result<Tileset, TiledError> {
         let mut tileset_parser = EventReader::new(file);
         loop {
             match tileset_parser
@@ -456,7 +456,7 @@ impl Tileset {
                             first_gid,
                             &mut tileset_parser,
                             &attributes,
-                            map_path
+                            tileset_path
                         );
                     }
                 }
@@ -474,7 +474,7 @@ impl Tileset {
         first_gid: u32,
         parser: &mut EventReader<R>,
         attrs: &Vec<OwnedAttribute>,
-        map_path: Option<&Path>,
+        tileset_path: Option<&Path>,
     ) -> Result<Tileset, TiledError> {
         let ((spacing, margin, tilecount), (name, width, height)) = get_attrs!(
             attrs,
@@ -496,11 +496,11 @@ impl Tileset {
         let mut properties = HashMap::new();
         parse_tag!(parser, "tileset", {
             "image" => |attrs| {
-                images.push(Image::new(parser, attrs)?);
+                images.push(Image::new(parser, attrs, tileset_path)?);
                 Ok(())
             },
             "tile" => |attrs| {
-                tiles.push(Tile::new(parser, attrs, map_path)?);
+                tiles.push(Tile::new(parser, attrs, tileset_path)?);
                 Ok(())
             },
             "properties" => |_| {
@@ -559,7 +559,7 @@ impl Tile {
         let mut animation = None;
         parse_tag!(parser, "tile", {
             "image" => |attrs| {
-                images.push(Image::new(parser, attrs)?);
+                images.push(Image::new(parser, attrs, map_path)?);
                 Ok(())
             },
             "properties" => |_| {
@@ -589,17 +589,20 @@ impl Tile {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Image {
-    /// The filepath of the image
+    /// The filepath of the image, as it appears in the file
     pub source: String,
     pub width: i32,
     pub height: i32,
     pub transparent_colour: Option<Colour>,
+
+    base_path: Option<PathBuf>,
 }
 
 impl Image {
     fn new<R: Read>(
         parser: &mut EventReader<R>,
         attrs: Vec<OwnedAttribute>,
+        base_path: Option<&Path>,
     ) -> Result<Image, TiledError> {
         let (c, (s, w, h)) = get_attrs!(
             attrs,
@@ -620,7 +623,16 @@ impl Image {
             width: w,
             height: h,
             transparent_colour: c,
+            base_path: base_path.map(|p| p.parent().unwrap().to_path_buf()),
         })
+    }
+
+    /// Returns the path to the image file relative to the path provided to when loading the tilemap
+    ///
+    /// For example, when loading a tilemap from `assets/tilemaps/tilemap.tmx` which contains an image with a src of
+    /// `../image.png`, this function will return `assets/tilemaps/../image.png`.
+    pub fn source_path(&self) -> Option<PathBuf> {
+        Some(self.base_path.as_ref()?.join(&PathBuf::from(&self.source)))
     }
 }
 
@@ -801,7 +813,7 @@ impl ImageLayer {
         let mut image: Option<Image> = None;
         parse_tag!(parser, "imagelayer", {
             "image" => |attrs| {
-                image = Some(Image::new(parser, attrs)?);
+                image = Some(Image::new(parser, attrs, None)?);
                 Ok(())
             },
             "properties" => |_| {

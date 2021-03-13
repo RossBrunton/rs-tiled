@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tiled::{parse, parse_file, parse_tileset, Map, PropertyValue, TiledError, LayerData};
 
 fn read_from_file(p: &Path) -> Result<Map, TiledError> {
@@ -24,7 +24,7 @@ fn test_gzip_and_zlib_encoded_and_raw_are_the_same() {
 
 #[test]
 fn test_external_tileset() {
-    let r = read_from_file(&Path::new("assets/tiled_base64.tmx")).unwrap();
+    let r = read_from_file_with_path(&Path::new("assets/tiled_base64.tmx")).unwrap();
     let e = read_from_file_with_path(&Path::new("assets/tiled_base64_external.tmx")).unwrap();
     assert_eq!(r, e);
 }
@@ -34,6 +34,31 @@ fn test_just_tileset() {
     let r = read_from_file(&Path::new("assets/tiled_base64.tmx")).unwrap();
     let t = parse_tileset(File::open(Path::new("assets/tilesheet.tsx")).unwrap(), 1).unwrap();
     assert_eq!(r.tilesets[0], t);
+}
+
+#[test]
+fn test_image_path() {
+    let ts_local = read_from_file_with_path(&Path::new("assets/tiled_base64.tmx"))
+        .unwrap()
+        .tilesets[0]
+        .images[0]
+        .clone();
+    let ts_external = read_from_file_with_path(&Path::new("assets/tiled_base64_external.tmx"))
+        .unwrap()
+        .tilesets[0]
+        .images[0]
+        .clone();
+
+    assert_eq!(ts_local.source, "tilesheet.png");
+    assert_eq!(ts_external.source, "tilesheet.png");
+    assert_eq!(
+        ts_local.source_path(),
+        Some(PathBuf::from("assets/tilesheet.png"))
+    );
+    assert_eq!(
+        ts_external.source_path(),
+        Some(PathBuf::from("assets/tilesheet.png"))
+    );
 }
 
 #[test]
